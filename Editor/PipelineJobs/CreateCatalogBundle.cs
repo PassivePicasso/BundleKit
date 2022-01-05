@@ -27,7 +27,6 @@ namespace BundleKit.PipelineJobs
         {
             var am = new AssetsManager();
             var assetsReplacers = new List<AssetsReplacer>();
-            var bundleReplacers = new List<BundleReplacer>();
 
             using (var progressBar = new ProgressBar("Constructing AssetBundle"))
                 try
@@ -71,6 +70,11 @@ namespace BundleKit.PipelineJobs
                     var mContainerChildren = new List<AssetTypeValueField>();
                     var dependencies = new Dictionary<string, int>();
                     var streamReaders = new Dictionary<string, Stream>();
+
+                    var tempResSFilePath = $"Temp/ThunderKit/resS/{bundleAssetsFile.name}.resS";
+                    Directory.CreateDirectory(Path.GetDirectoryName(tempResSFilePath));
+                    var resSFileStream = File.Create(tempResSFilePath);
+                    string resSInternalPath = $"archive:/{bundleAssetsFile.name}/{bundleAssetsFile.name}.resS";
 
                     bundleAssetsFile.file.dependencies.dependencies.Clear();
                     bundleAssetsFile.file.dependencies.dependencyCount = 0;
@@ -126,18 +130,29 @@ namespace BundleKit.PipelineJobs
                         switch (baseField.GetFieldType())
                         {
                             case "Texture2D":
-                            case "Cubemap":
-                                TextureFile texFile = TextureFile.ReadTextureFile(baseField);
-                                texFile.ImportTextureData(streamReaders, dataDirectoryPath);
-                                texFile.WriteTextureFile(baseField);
+                                {
+                                    TextureFile texFile = TextureFile.ReadTextureFile(baseField);
+
+                                    var position = resSFileStream.Length;
+                                    texFile.CopyTextureData(streamReaders, resSFileStream, dataDirectoryPath, resSInternalPath);
+                                    texFile.WriteTextureFile(baseField, false);
+                                    var assetBytes = asset.instance.WriteToByteArray();
+                                    var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.curFileType,
+                                                                                            AssetHelper.GetScriptIndex(asset.file.file, asset.info),
+                                                                                            assetBytes);
+                                    assetsReplacers.Add(currentAssetReplacer);
+                                }
+                                break;
+                            default:
+                                {
+                                    var assetBytes = asset.instance.WriteToByteArray();
+                                    var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.curFileType,
+                                                                                            AssetHelper.GetScriptIndex(asset.file.file, asset.info),
+                                                                                            assetBytes);
+                                    assetsReplacers.Add(currentAssetReplacer);
+                                }
                                 break;
                         }
-
-                        var assetBytes = asset.instance.WriteToByteArray();
-                        var currentAssetReplacer = new AssetsReplacerFromMemory(0, localId, (int)asset.info.curFileType,
-                                                                                AssetHelper.GetScriptIndex(asset.file.file, asset.info),
-                                                                                assetBytes);
-                        assetsReplacers.Add(currentAssetReplacer);
                         mContainerChildren.Add(containerArray.CreateEntry(assetTree.name, 0, localId, preloadIndex, preloadChildren.Count - preloadIndex));
                     }
                     //var maps = reverseMap.Select(map => (map.Key, map.Value.Select(kvp => (kvp.Key, kvp.Value)).ToArray())).ToArray();
@@ -169,12 +184,17 @@ namespace BundleKit.PipelineJobs
                         bundleAssetsFile.file.Write(writer, 0, assetsReplacers, 0);
                         newAssetData = bundleStream.ToArray();
                     }
-                    var bundleReplacer = new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1);
-                    bundleReplacers.Add(bundleReplacer);
+
+                    resSFileStream.Position = 0;
 
                     using (var file = File.OpenWrite(outputAssetBundlePath))
                     using (var writer = new AssetsFileWriter(file))
-                        bun.file.Write(writer, bundleReplacers);
+                        bun.file.Write(writer, new List<BundleReplacer> {
+                        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1, 0),
+                        new BundleReplacerFromStream($"{bundleAssetsFile.name}.resS", $"{bundleAssetsFile.name}.resS", true, resSFileStream, 0, -1, 1)
+                    });
+
+                    resSFileStream.Dispose();
                 }
                 finally
                 {

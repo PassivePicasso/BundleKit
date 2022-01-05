@@ -467,8 +467,38 @@ namespace BundleKit.Utility
                 UnityEngine.Debug.LogError(e);
             }
         }
+        public static void CopyTextureData(this TextureFile texFile, Dictionary<string, Stream> streamReaders, FileStream outputStream, string dataDirectoryPath, string internalPath)
+        {
+            var streamPath = texFile.m_StreamData.path;
+            var newPath = Path.Combine(dataDirectoryPath, streamPath);
+            var fixedNewPath = newPath.Replace("\\", "/");
+            try
+            {
+                var offset = texFile.m_StreamData.offset;
+                var size = texFile.m_StreamData.size;
 
-        public static void WriteTextureFile(this TextureFile textureFile, AssetTypeValueField baseField)
+                Stream stream;
+                if (streamReaders.ContainsKey(fixedNewPath))
+                    stream = streamReaders[fixedNewPath];
+                else
+                    streamReaders[fixedNewPath] = stream = File.OpenRead(fixedNewPath);
+
+                var newOffset = (ulong)outputStream.Length;
+                stream.Position = (long)texFile.m_StreamData.offset;
+                stream.CopyToCompat(outputStream, texFile.m_StreamData.size);
+
+                var streamData = texFile.m_StreamData;
+                streamData.offset = newOffset;
+                streamData.path = internalPath;
+                texFile.m_StreamData = streamData;
+            }
+            catch (Exception e)
+            {
+                UnityEngine.Debug.LogError(e);
+            }
+        }
+
+        public static void WriteTextureFile(this TextureFile textureFile, AssetTypeValueField baseField, bool writePictureData = true)
         {
             if (!baseField.GetField("m_Name").IsDummy()) baseField.SetValue("m_Name", textureFile.m_Name);
             if (!baseField.GetField("m_ForcedFallbackFormat").IsDummy()) baseField.SetValue("m_ForcedFallbackFormat", textureFile.m_ForcedFallbackFormat);
@@ -496,18 +526,19 @@ namespace BundleKit.Utility
             if (!baseField.GetField("m_LightmapFormat").IsDummy()) baseField.SetValue("m_LightmapFormat", textureFile.m_LightmapFormat);
             if (!baseField.GetField("m_ColorSpace").IsDummy()) baseField.SetValue("m_ColorSpace", textureFile.m_ColorSpace);
 
-            var image_data = baseField.GetField("image data");
-            image_data.GetValue().type = EnumValueTypes.ByteArray;
-            image_data.templateField.valueType = EnumValueTypes.ByteArray;
-            var byteArray = new AssetTypeByteArray()
+            if (writePictureData)
             {
-                size = (uint)textureFile.pictureData.Length,
-                data = textureFile.pictureData
-            };
-            image_data.GetValue().Set(byteArray);
-            if (!baseField.GetField("m_CompleteImageSize").IsDummy()) baseField.SetValue("m_CompleteImageSize", textureFile.pictureData.Length);
-
-
+                var image_data = baseField.GetField("image data");
+                image_data.GetValue().type = EnumValueTypes.ByteArray;
+                image_data.templateField.valueType = EnumValueTypes.ByteArray;
+                var byteArray = new AssetTypeByteArray()
+                {
+                    size = (uint)textureFile.pictureData.Length,
+                    data = textureFile.pictureData
+                };
+                image_data.GetValue().Set(byteArray);
+                if (!baseField.GetField("m_CompleteImageSize").IsDummy()) baseField.SetValue("m_CompleteImageSize", textureFile.pictureData.Length);
+            }
             if (!baseField.GetField("m_StreamData/offset").IsDummy()) baseField.SetValue("m_StreamData/offset", textureFile.m_StreamData.offset);
             if (!baseField.GetField("m_StreamData/size").IsDummy()) baseField.SetValue("m_StreamData/size", textureFile.m_StreamData.size);
             if (!baseField.GetField("m_StreamData/path").IsDummy()) baseField.SetValue("m_StreamData/path", textureFile.m_StreamData.path);
