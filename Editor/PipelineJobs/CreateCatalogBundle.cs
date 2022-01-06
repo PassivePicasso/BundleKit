@@ -186,12 +186,18 @@ namespace BundleKit.PipelineJobs
                     }
 
                     resSFileStream.Position = 0;
+                    byte[] resFileBytes;
+                    using (var memStream = new MemoryStream())
+                    {
+                        resSFileStream.CopyTo(memStream);
+                        resFileBytes = memStream.ToArray();
+                    }
 
                     using (var file = File.OpenWrite(outputAssetBundlePath))
                     using (var writer = new AssetsFileWriter(file))
                         bun.file.Write(writer, new List<BundleReplacer> {
-                        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1, 0),
-                        new BundleReplacerFromStream($"{bundleAssetsFile.name}.resS", $"{bundleAssetsFile.name}.resS", true, resSFileStream, 0, -1, 1)
+                        new BundleReplacerFromMemory(bundleAssetsFile.name, bundleAssetsFile.name, true, newAssetData, -1),
+                        new BundleReplacerFromMemory($"{bundleAssetsFile.name}.resS", $"{bundleAssetsFile.name}.resS", false, resFileBytes, -1)
                     });
 
                     resSFileStream.Dispose();
